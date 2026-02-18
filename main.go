@@ -53,6 +53,22 @@ func streamHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	flusher.Flush()
+	// 🔥 ADD THIS BLOCK HERE (ONLY HERE)
+	for i := 1; i <= 5; i++ {
+		out := map[string]interface{}{
+			"choices": []map[string]interface{}{
+			{
+				"delta": map[string]string{
+					"content": fmt.Sprintf("init%d ", i),
+				},
+			},
+		},
+	}
+	jsonOut, _ := json.Marshal(out)
+	fmt.Fprintf(w, "data: %s\n\n", jsonOut)
+	flusher.Flush()
+	time.Sleep(50 * time.Millisecond)
+}
 
 	var body RequestBody
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
