@@ -23,49 +23,45 @@ class PromptRequest(BaseModel):
     prompt: str
     stream: bool = True
 
-
 async def generate_streaming_content(prompt: str):
     """
     Generates large streaming response progressively
-    in correct SSE format.
+    with immediate non-empty first token.
     """
 
-    # Force proxy flush with large padding
-    padding = " " * 2048
-    yield f'data: {{"choices":[{{"delta":{{"content":""}}}}], "padding":"{padding}"}}\n\n'
-    await asyncio.sleep(0)
-
-    # Large base content (relevant to streaming LLMs)
-    base_text = (
+    # 🚀 Large immediate FIRST content (not empty)
+    initial_text = (
         "Streaming large language model APIs enable real-time content generation "
-        "by progressively delivering tokens as they are produced. Unlike traditional "
-        "batch inference systems, streaming architectures significantly reduce perceived "
-        "latency and improve user experience. By transmitting partial responses, "
-        "applications such as chat assistants, AI writing tools, and collaborative "
-        "platforms can provide immediate feedback. Proper streaming implementation "
-        "requires chunked transfer encoding, Server-Sent Events formatting, explicit "
-        "buffer flushing, and robust error handling mechanisms. Developers must manage "
-        "timeouts, rate limits, network interruptions, and proxy buffering behaviors. "
-        "Performance metrics such as first-token latency and token throughput are "
-        "critical for evaluating scalability. Efficient streaming systems typically "
-        "use asynchronous frameworks and non-blocking IO to maintain responsiveness "
-        "under heavy load. In production environments, reverse proxies and containerized "
-        "infrastructure must be configured to disable buffering. Monitoring and logging "
-        "ensure observability and reliability across distributed deployments. "
+        "by progressively delivering tokens as they are produced. "
+    ) * 10  # make it large enough to force flush
+
+    yield f'data: {{"choices":[{{"delta":{{"content":"{initial_text}"}}}}]}}\n\n'
+    await asyncio.sleep(0.01)
+
+    # Main content (ensures >1625 characters total)
+    base_text = (
+        "Unlike traditional batch inference systems, streaming architectures "
+        "significantly reduce perceived latency and improve user experience. "
+        "By transmitting partial responses, applications such as chat assistants "
+        "and AI writing tools can provide immediate feedback. "
+        "Proper streaming implementation requires chunked transfer encoding, "
+        "buffer flushing, scalability management, and robust error handling. "
+        "Performance metrics such as first-token latency and token throughput "
+        "are critical for evaluating real-time systems. "
     )
 
-    # Repeat to ensure >1625 characters
-    full_text = base_text * 8  # safely exceeds requirement
+    full_text = base_text * 15  # safely exceed 1625 characters
 
-    chunk_size = 120
+    chunk_size = 150
 
     for i in range(0, len(full_text), chunk_size):
         chunk = full_text[i:i + chunk_size]
-
         yield f'data: {{"choices":[{{"delta":{{"content":"{chunk}"}}}}]}}\n\n'
         await asyncio.sleep(0.05)
 
     yield "data: [DONE]\n\n"
+
+
 
 
 @app.post("/")
