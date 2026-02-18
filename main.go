@@ -148,4 +148,49 @@ func streamHandler(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 
-		delta, ok := choice["delta"]()
+		delta, ok := choice["delta"].(map[string]interface{})
+		if !ok {
+			continue
+		}
+
+		content, exists := delta["content"]
+		if !exists {
+			continue
+		}
+
+		out := map[string]interface{}{
+			"choices": []map[string]interface{}{
+				{
+					"delta": map[string]string{
+						"content": content.(string),
+					},
+				},
+			},
+		}
+
+		jsonOut, _ := json.Marshal(out)
+		fmt.Fprintf(w, "data: %s\n\n", jsonOut)
+		flusher.Flush()
+
+		time.Sleep(20 * time.Millisecond)
+	}
+}
+
+func sendError(w http.ResponseWriter, flusher http.Flusher, message string) {
+	errResp := map[string]string{"error": message}
+	jsonErr, _ := json.Marshal(errResp)
+	fmt.Fprintf(w, "data: %s\n\n", jsonErr)
+	flusher.Flush()
+}
+
+func main() {
+	http.HandleFunc("/stream", streamHandler)
+
+	port := os.Getenv("PORT")
+	if port == "" {
+		port = "9090"
+	}
+
+	log.Println("Server running on port", port)
+	log.Fatal(http.ListenAndServe(":"+port, nil))
+}
