@@ -123,12 +123,45 @@ func streamHandler(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		if len(line) > 0 {
-			w.Write(line)
-			flusher.Flush()
+		// OpenAI sends lines starting with "data: "
+		if bytes.HasPrefix(line, []byte("data: ")) {
+
+			data := bytes.TrimPrefix(line, []byte("data: "))
+			data = bytes.TrimSpace(data)
+
+			if string(data) == "[DONE]" {
+				fmt.Fprintf(w, "data: [DONE]\n\n")
+				flusher.Flush()
+				return
+			}
+
+			var parsed map[string]interface{}
+			if err := json.Unmarshal(data, &parsed); err == nil {
+
+				choices, ok := parsed["choices"].([]interface{})
+				if ok && len(choices) > 0 {
+
+					choice := choices[0].(map[string]interface{})
+					delta := choice["delta"].(map[string]interface{})
+
+					if content, exists := delta["content"]; exists {
+
+						out := map[string]string{
+							"content": content.(string),
+						}
+
+						jsonOut, _ := json.Marshal(out)
+						fmt.Fprintf(w, "data: %s\n\n", jsonOut)
+						flusher.Flush()
+					}
+				}
+			}
 		}
 	}
 }
+
+
+	
 
 
 func sendError(w http.ResponseWriter, flusher http.Flusher, message string) {
