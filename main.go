@@ -131,6 +131,12 @@ func main() {
 	http.HandleFunc("/stream", streamHandler)
 
 	fmt.Println("Server running at http://localhost:9090")
-	log.Fatal(http.ListenAndServe(":9090", nil))
+	port := os.Getenv("PORT")
+	if port == "" {
+		port = "9090" // local fallback
+}
+
+fmt.Println("Server running on port", port)
+log.Fatal(http.ListenAndServe(":"+port, nil))
 
 }
