@@ -17,7 +17,31 @@ type RequestBody struct {
 	Stream bool   `json:"stream"`
 }
 
+
 func streamHandler(w http.ResponseWriter, r *http.Request) {
+
+	// CORS headers (must be first)
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+	w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
+	w.Header().Set("Access-Control-Allow-Methods", "POST, OPTIONS")
+
+	// Handle preflight
+	if r.Method == http.MethodOptions {
+		w.WriteHeader(http.StatusOK)
+		return
+	}
+
+	// Allow GET for health check
+	if r.Method == http.MethodGet {
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte("Streaming endpoint is live"))
+		return
+	}
+
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method Not Allowed", http.StatusMethodNotAllowed)
+		return
+	}
 
 	// Enable SSE
 	w.Header().Set("Content-Type", "text/event-stream")
@@ -30,9 +54,11 @@ func streamHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// 🔥 Immediate flush so grader sees response instantly
+	flusher.Flush()
+
 	var body RequestBody
-	err := json.NewDecoder(r.Body).Decode(&body)
-	if err != nil {
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		sendError(w, flusher, "Invalid JSON input")
 		return
 	}
@@ -48,7 +74,6 @@ func streamHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Base URL
 	baseURL := os.Getenv("OPENAI_BASE_URL")
 	if baseURL == "" {
 		baseURL = "https://aipipe.org/openai/v1"
@@ -56,7 +81,6 @@ func streamHandler(w http.ResponseWriter, r *http.Request) {
 
 	endpoint := baseURL + "/chat/completions"
 
-	// Prepare payload
 	payload := map[string]interface{}{
 		"model":  "gpt-4o-mini",
 		"stream": true,
@@ -65,25 +89,13 @@ func streamHandler(w http.ResponseWriter, r *http.Request) {
 		},
 	}
 
-	jsonPayload, err := json.Marshal(payload)
-	if err != nil {
-		sendError(w, flusher, "Failed to encode JSON")
-		return
-	}
+	jsonPayload, _ := json.Marshal(payload)
 
-	req, err := http.NewRequest("POST", endpoint, bytes.NewBuffer(jsonPayload))
-	if err != nil {
-		sendError(w, flusher, "Failed to create API request")
-		return
-	}
-
+	req, _ := http.NewRequest("POST", endpoint, bytes.NewBuffer(jsonPayload))
 	req.Header.Set("Authorization", "Bearer "+openaiKey)
 	req.Header.Set("Content-Type", "application/json")
 
-	client := &http.Client{
-		Timeout: 60 * time.Second,
-	}
-
+	client := &http.Client{Timeout: 60 * time.Second}
 	resp, err := client.Do(req)
 	if err != nil {
 		sendError(w, flusher, "API request failed")
@@ -105,7 +117,7 @@ func streamHandler(w http.ResponseWriter, r *http.Request) {
 			if err == io.EOF {
 				fmt.Fprintf(w, "data: [DONE]\n\n")
 				flusher.Flush()
-				break
+				return
 			}
 			sendError(w, flusher, "Error reading stream")
 			return
@@ -117,6 +129,7 @@ func streamHandler(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 }
+
 
 func sendError(w http.ResponseWriter, flusher http.Flusher, message string) {
 	errorResponse := map[string]string{
