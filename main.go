@@ -43,10 +43,14 @@ func streamHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Enable SSE
+	// Enable 
 	w.Header().Set("Content-Type", "text/event-stream")
 	w.Header().Set("Cache-Control", "no-cache")
 	w.Header().Set("Connection", "keep-alive")
+	w.Header().Set("X-Accel-Buffering", "no") // disable proxy buffering
+	w.Header().Set("Transfer-Encoding", "chunked")
+
+
 
 	flusher, ok := w.(http.Flusher)
 	if !ok {
@@ -153,6 +157,8 @@ func streamHandler(w http.ResponseWriter, r *http.Request) {
 						jsonOut, _ := json.Marshal(out)
 						fmt.Fprintf(w, "data: %s\n\n", jsonOut)
 						flusher.Flush()
+						time.Sleep(20 * time.Millisecond)
+
 					}
 				}
 			}
