@@ -9,28 +9,26 @@ import (
 	"log"
 	"net/http"
 	"os"
-	"time")
+	"time"
+)
 
 type RequestBody struct {
 	Prompt string `json:"prompt"`
 	Stream bool   `json:"stream"`
 }
 
-
 func streamHandler(w http.ResponseWriter, r *http.Request) {
 
-	// CORS headers (must be first)
+	// CORS
 	w.Header().Set("Access-Control-Allow-Origin", "*")
 	w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
 	w.Header().Set("Access-Control-Allow-Methods", "POST, OPTIONS")
 
-	// Handle preflight
 	if r.Method == http.MethodOptions {
 		w.WriteHeader(http.StatusOK)
 		return
 	}
 
-	// Allow GET for health check
 	if r.Method == http.MethodGet {
 		w.WriteHeader(http.StatusOK)
 		w.Write([]byte("Streaming endpoint is live"))
@@ -42,14 +40,11 @@ func streamHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Enable 
+	// SSE headers
 	w.Header().Set("Content-Type", "text/event-stream")
 	w.Header().Set("Cache-Control", "no-cache")
 	w.Header().Set("Connection", "keep-alive")
-	w.Header().Set("X-Accel-Buffering", "no") // disable proxy buffering
-	w.Header().Set("Transfer-Encoding", "chunked")
-
-
+	w.Header().Set("X-Accel-Buffering", "no")
 
 	flusher, ok := w.(http.Flusher)
 	if !ok {
@@ -57,7 +52,6 @@ func streamHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// 🔥 Immediate flush so grader sees response instantly
 	flusher.Flush()
 
 	var body RequestBody
@@ -71,8 +65,8 @@ func streamHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	openaiKey := os.Getenv("OPENAI_API_KEY")
-	if openaiKey == "" {
+	apiKey := os.Getenv("OPENAI_API_KEY")
+	if apiKey == "" {
 		sendError(w, flusher, "Missing OpenAI API key")
 		return
 	}
@@ -95,7 +89,7 @@ func streamHandler(w http.ResponseWriter, r *http.Request) {
 	jsonPayload, _ := json.Marshal(payload)
 
 	req, _ := http.NewRequest("POST", endpoint, bytes.NewBuffer(jsonPayload))
-	req.Header.Set("Authorization", "Bearer "+openaiKey)
+	req.Header.Set("Authorization", "Bearer "+apiKey)
 	req.Header.Set("Content-Type", "application/json")
 
 	client := &http.Client{Timeout: 60 * time.Second}
@@ -126,77 +120,32 @@ func streamHandler(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		// OpenAI sends lines starting with "data: "
-		if bytes.HasPrefix(line, []byte("data: ")) {
-
-			data := bytes.TrimPrefix(line, []byte("data: "))
-			data = bytes.TrimSpace(data)
-
-			if string(data) == "[DONE]" {
-				fmt.Fprintf(w, "data: [DONE]\n\n")
-				flusher.Flush()
-				return
-			}
-
-			var parsed map[string]interface{}
-			if err := json.Unmarshal(data, &parsed); err == nil {
-
-				choices, ok := parsed["choices"].([]interface{})
-				if ok && len(choices) > 0 {
-
-					choice := choices[0].(map[string]interface{})
-					delta := choice["delta"].(map[string]interface{})
-
-					if content, exists := delta["content"]; exists {
-
-					out := map[string]interface{}{
-						"choices": []map[string]interface{}{
-							{
-								"delta": map[string]string{
-									"content": content.(string),
-								},
-							},
-						},
-					}
-
-	jsonOut, _ := json.Marshal(out)
-	fmt.Fprintf(w, "data: %s\n\n", jsonOut)
-	flusher.Flush()
-	time.Sleep(20 * time.Millisecond)
-}
-
-
-					
-					}
-				}
-			}
+		if !bytes.HasPrefix(line, []byte("data: ")) {
+			continue
 		}
-	}
-}
 
+		data := bytes.TrimPrefix(line, []byte("data: "))
+		data = bytes.TrimSpace(data)
 
-	
+		if string(data) == "[DONE]" {
+			fmt.Fprintf(w, "data: [DONE]\n\n")
+			flusher.Flush()
+			return
+		}
 
+		var parsed map[string]interface{}
+		if err := json.Unmarshal(data, &parsed); err != nil {
+			continue
+		}
 
-func sendError(w http.ResponseWriter, flusher http.Flusher, message string) {
-	errorResponse := map[string]string{
-		"error": message,
-	}
-	jsonErr, _ := json.Marshal(errorResponse)
-	fmt.Fprintf(w, "data: %s\n\n", jsonErr)
-	flusher.Flush()
-}
+		choices, ok := parsed["choices"].([]interface{})
+		if !ok || len(choices) == 0 {
+			continue
+		}
 
-func main() {
-	http.HandleFunc("/stream", streamHandler)
+		choice, ok := choices[0].(map[string]interface{})
+		if !ok {
+			continue
+		}
 
-	fmt.Println("Server running at http://localhost:9090")
-	port := os.Getenv("PORT")
-	if port == "" {
-		port = "9090" // local fallback
-}
-
-fmt.Println("Server running on port", port)
-log.Fatal(http.ListenAndServe(":"+port, nil))
-
-}
+		delta, ok := choice["delta"]()
