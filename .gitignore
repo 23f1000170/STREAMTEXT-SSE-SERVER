@@ -3,3 +3,4 @@
 *.exe
 *.out
 node_modules/
+venv
