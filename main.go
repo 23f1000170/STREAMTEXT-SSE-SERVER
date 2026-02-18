@@ -9,8 +9,7 @@ import (
 	"log"
 	"net/http"
 	"os"
-	"time"
-)
+	"time")
 
 type RequestBody struct {
 	Prompt string `json:"prompt"`
@@ -150,15 +149,24 @@ func streamHandler(w http.ResponseWriter, r *http.Request) {
 
 					if content, exists := delta["content"]; exists {
 
-						out := map[string]string{
-							"content": content.(string),
-						}
+					out := map[string]interface{}{
+						"choices": []map[string]interface{}{
+							{
+								"delta": map[string]string{
+									"content": content.(string),
+								},
+							},
+						},
+					}
 
-						jsonOut, _ := json.Marshal(out)
-						fmt.Fprintf(w, "data: %s\n\n", jsonOut)
-						flusher.Flush()
-						time.Sleep(20 * time.Millisecond)
+	jsonOut, _ := json.Marshal(out)
+	fmt.Fprintf(w, "data: %s\n\n", jsonOut)
+	flusher.Flush()
+	time.Sleep(20 * time.Millisecond)
+}
 
+
+					
 					}
 				}
 			}
